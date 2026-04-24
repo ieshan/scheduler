@@ -58,8 +58,10 @@ func Cron(expr string) (Schedule, error) {
 	}, nil
 }
 
+// Type returns "cron" for cron expression schedules.
 func (s *cronSchedule) Type() string { return "cron" }
 
+// NextTick implements [Schedule] by finding the next matching time based on the cron expression.
 func (s *cronSchedule) NextTick(now time.Time) time.Time {
 	// Start from the next minute
 	t := now.Truncate(time.Minute).Add(time.Minute)

@@ -210,6 +210,51 @@ delay := scheduler.RetryBackoff(time.Second, attempt)
 // attempt 2: 2s – 6s
 ```
 
+## Graceful Shutdown
+
+`Stop` cancels the context passed to `Start`, signals all workers to exit, and waits for in-flight jobs to finish. It is safe to call multiple times.
+
+For production deployments, wire `Stop` to OS signals so the scheduler shuts down cleanly on `SIGINT`/`SIGTERM`:
+
+```go
+package main
+
+import (
+    "context"
+    "os"
+    "os/signal"
+    "syscall"
+
+    "github.com/ieshan/scheduler"
+)
+
+func main() {
+    store := scheduler.NewInMemoryJobStore()
+    sched := scheduler.New(scheduler.Config{
+        Store:     store,
+        Executors: map[string]scheduler.JobExecutor{"print": &printExecutor{}},
+    })
+
+    // Start the scheduler in a goroutine.
+    go sched.Start(context.Background())
+
+    // Block until a termination signal is received.
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+    <-quit
+
+    // Stop waits for all in-flight jobs to complete.
+    sched.Stop()
+}
+```
+
+Key behaviors:
+
+- **In-flight jobs finish** — `Stop` blocks on a `sync.WaitGroup` until every worker goroutine exits.
+- **Context is cancelled** — Executors receive `context.Canceled` and should abort long-running work promptly.
+- **No new dispatches** — Once `Stop` is called, no further jobs are enqueued.
+- **Idempotent** — Calling `Stop` more than once is safe; only the first call takes effect.
+
 ## Testing
 
 The scheduler is designed for deterministic testing:

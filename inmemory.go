@@ -21,6 +21,7 @@ func NewInMemoryJobStore() *InMemoryJobStore {
 	return &InMemoryJobStore{jobs: make(map[string]*Job)}
 }
 
+// List returns all jobs in the store.
 func (s *InMemoryJobStore) List(_ context.Context) ([]Job, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -31,6 +32,7 @@ func (s *InMemoryJobStore) List(_ context.Context) ([]Job, error) {
 	return result, nil
 }
 
+// Get returns a single job by ID, or [ErrJobNotFound] if not found.
 func (s *InMemoryJobStore) Get(_ context.Context, id string) (*Job, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -41,6 +43,7 @@ func (s *InMemoryJobStore) Get(_ context.Context, id string) (*Job, error) {
 	return new(*j), nil
 }
 
+// Save creates or overwrites a job in the store.
 func (s *InMemoryJobStore) Save(_ context.Context, job *Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -48,6 +51,8 @@ func (s *InMemoryJobStore) Save(_ context.Context, job *Job) error {
 	return nil
 }
 
+// Delete removes a job from the store.
+// Returns [ErrJobNotFound] if the job does not exist.
 func (s *InMemoryJobStore) Delete(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -58,6 +63,8 @@ func (s *InMemoryJobStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// UpdateState updates only the [JobState] fields of a job.
+// Returns [ErrJobNotFound] if the job does not exist.
 func (s *InMemoryJobStore) UpdateState(_ context.Context, id string, state JobState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

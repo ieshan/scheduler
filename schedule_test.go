@@ -37,3 +37,19 @@ func TestAtSchedule_NextTick_Past(t *testing.T) {
 		t.Errorf("past AtSchedule should return zero time, got %v", next)
 	}
 }
+
+func TestEverySchedule_Type(t *testing.T) {
+	t.Parallel()
+	s := Every(time.Minute)
+	if s.Type() != "every" {
+		t.Errorf("Type() = %q, want %q", s.Type(), "every")
+	}
+}
+
+func TestAtSchedule_Type(t *testing.T) {
+	t.Parallel()
+	s := At(time.Now().Add(time.Hour))
+	if s.Type() != "at" {
+		t.Errorf("Type() = %q, want %q", s.Type(), "at")
+	}
+}

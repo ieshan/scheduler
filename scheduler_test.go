@@ -183,22 +183,6 @@ func TestScheduler_WakeOnChange(t *testing.T) {
 	}
 }
 
-// blockingExecutor blocks until unblock is closed OR ctx is cancelled.
-type blockingExecutor struct {
-	unblock chan struct{}
-	started chan struct{}
-}
-
-func (e *blockingExecutor) Execute(ctx context.Context, _ *Job) (*JobResult, error) {
-	close(e.started)
-	select {
-	case <-e.unblock:
-		return &JobResult{Status: StatusSuccess}, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
 func TestScheduler_StopWaitsForInFlight(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -268,10 +252,7 @@ func TestScheduler_StopCancelsContext(t *testing.T) {
 
 	store := NewInMemoryJobStore()
 	ctxErr := make(chan error, 1)
-	exec := &blockingExecutor{
-		unblock: make(chan struct{}), // never closed — relies on ctx cancel
-		started: make(chan struct{}),
-	}
+	started := make(chan struct{})
 
 	store.Save(ctx, &Job{
 		ID: "ctx-cancel", Name: "ctx-cancel", Enabled: true, ExecutorType: "block",
@@ -279,9 +260,8 @@ func TestScheduler_StopCancelsContext(t *testing.T) {
 		State:    JobState{NextRun: time.Now()},
 	})
 
-	// Custom executor that reports the context error.
-	customExec := executorFunc(func(ctx context.Context, j *Job) (*JobResult, error) {
-		close(exec.started)
+	exec := executorFunc(func(ctx context.Context, _ *Job) (*JobResult, error) {
+		close(started)
 		<-ctx.Done()
 		ctxErr <- ctx.Err()
 		return nil, ctx.Err()
@@ -291,13 +271,13 @@ func TestScheduler_StopCancelsContext(t *testing.T) {
 		Store:         store,
 		PollInterval:  50 * time.Millisecond,
 		MaxConcurrent: 2,
-		Executors:     map[string]JobExecutor{"block": customExec},
+		Executors:     map[string]JobExecutor{"block": exec},
 	})
 
 	go s.Start(ctx)
 
 	select {
-	case <-exec.started:
+	case <-started:
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for executor to start")
 	}
@@ -480,6 +460,142 @@ func TestScheduler_SemaphoreLimitsConcurrency(t *testing.T) {
 	}
 }
 
+func TestScheduler_DefaultConfig(t *testing.T) {
+	t.Parallel()
+	s := New(Config{
+		Store:     NewInMemoryJobStore(),
+		Executors: map[string]JobExecutor{},
+	})
+	if s.maxConc != 5 {
+		t.Errorf("default MaxConcurrent = %d, want 5", s.maxConc)
+	}
+	if s.poll != 30*time.Second {
+		t.Errorf("default PollInterval = %v, want 30s", s.poll)
+	}
+	if s.logger == nil {
+		t.Error("default Logger should not be nil")
+	}
+	if s.nowFunc == nil {
+		t.Error("default nowFunc should not be nil")
+	}
+}
+
+func TestScheduler_DeleteAfterRun(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	store := NewInMemoryJobStore()
+	exec := newCountExecutor()
+
+	store.Save(ctx, &Job{
+		ID:             "one-shot",
+		Name:           "one-shot",
+		Enabled:        true,
+		ExecutorType:   "test",
+		DeleteAfterRun: true,
+		Schedule:       Every(time.Hour),
+		State:          JobState{NextRun: time.Now()},
+	})
+
+	s := New(Config{
+		Store:         store,
+		PollInterval:  50 * time.Millisecond,
+		MaxConcurrent: 1,
+		Executors:     map[string]JobExecutor{"test": exec},
+	})
+
+	go s.Start(ctx)
+
+	select {
+	case <-exec.done:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for one-shot job execution")
+	}
+	s.Stop()
+
+	job, err := store.Get(ctx, "one-shot")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if job.Enabled {
+		t.Error("one-shot job should be disabled after execution")
+	}
+}
+
+func TestScheduler_StopIdempotent(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	store := NewInMemoryJobStore()
+	s := New(Config{
+		Store:        store,
+		PollInterval: 50 * time.Millisecond,
+		Executors:    map[string]JobExecutor{},
+	})
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		s.Start(ctx)
+	}()
+	<-started
+	s.Stop()
+	s.Stop() // should not panic or hang
+}
+
+func TestScheduler_SuccessfulJobUpdatesState(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	store := NewInMemoryJobStore()
+	exec := newCountExecutor()
+
+	store.Save(ctx, &Job{
+		ID:           "state-check",
+		Name:         "state-check",
+		Enabled:      true,
+		ExecutorType: "test",
+		Schedule:     Every(time.Hour),
+		State:        JobState{NextRun: time.Now()},
+	})
+
+	s := New(Config{
+		Store:         store,
+		PollInterval:  50 * time.Millisecond,
+		MaxConcurrent: 1,
+		Executors:     map[string]JobExecutor{"test": exec},
+	})
+
+	go s.Start(ctx)
+
+	select {
+	case <-exec.done:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for job execution")
+	}
+	s.Stop()
+
+	job, err := store.Get(ctx, "state-check")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if job.State.LastStatus != StatusSuccess {
+		t.Errorf("LastStatus = %q, want success", job.State.LastStatus)
+	}
+	if job.State.RunCount != 1 {
+		t.Errorf("RunCount = %d, want 1", job.State.RunCount)
+	}
+	if job.State.LastRun.IsZero() {
+		t.Error("LastRun should not be zero after execution")
+	}
+	if job.State.NextRun.IsZero() {
+		t.Error("NextRun should be calculated after execution")
+	}
+	if job.State.LastOutput != "ok" {
+		t.Errorf("LastOutput = %q, want %q", job.State.LastOutput, "ok")
+	}
+}
+
 func TestScheduler_FailedJobUpdatesState(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -522,4 +638,54 @@ func TestScheduler_FailedJobUpdatesState(t *testing.T) {
 		}
 	}
 	s.Stop()
+}
+
+// TestScheduler_MissingExecutor_SkipsJob verifies that jobs with unknown executor types
+// are skipped (not executed) during the tick loop.
+func TestScheduler_MissingExecutor_SkipsJob(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+
+	store := NewInMemoryJobStore()
+	exec := newCountExecutor()
+
+	// Job with unknown executor type - should be skipped
+	store.Save(ctx, &Job{
+		ID: "unknown-exec", Name: "unknown-exec", Enabled: true, ExecutorType: "nonexistent",
+		Schedule: Every(50 * time.Millisecond),
+		State:    JobState{NextRun: time.Now()},
+	})
+
+	// Job with known executor type - should run
+	store.Save(ctx, &Job{
+		ID: "known", Name: "known", Enabled: true, ExecutorType: "test",
+		Schedule: Every(50 * time.Millisecond),
+		State:    JobState{NextRun: time.Now()},
+	})
+
+	s := New(Config{
+		Store:        store,
+		PollInterval: 50 * time.Millisecond,
+		Executors:    map[string]JobExecutor{"test": exec},
+	})
+
+	go s.Start(ctx)
+
+	// Wait for the known job to execute
+	select {
+	case <-exec.done:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for known job")
+	}
+	s.Stop()
+
+	// Verify the unknown-exec job's state was never updated (no RunCount increment)
+	unknownJob, err := store.Get(ctx, "unknown-exec")
+	if err != nil {
+		t.Fatalf("Get unknown-exec: %v", err)
+	}
+	if unknownJob.State.RunCount != 0 {
+		t.Errorf("unknown executor job RunCount = %d, want 0", unknownJob.State.RunCount)
+	}
 }

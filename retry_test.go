@@ -29,3 +29,26 @@ func TestRetryBackoff_ZeroAttempt(t *testing.T) {
 		t.Errorf("attempt 0 delay = %v, want ~1s", d)
 	}
 }
+
+func TestRetryBackoff_ZeroBase(t *testing.T) {
+	t.Parallel()
+	d := RetryBackoff(0, 3)
+	if d != 0 {
+		t.Errorf("zero base should return zero, got %v", d)
+	}
+}
+
+func TestRetryBackoff_JitterBounds(t *testing.T) {
+	t.Parallel()
+	base := time.Second
+	for attempt := range 5 {
+		minDur := base * time.Duration(1<<uint(attempt)) / 2
+		maxDur := base * time.Duration(1<<uint(attempt)) * 3 / 2
+		for range 50 {
+			d := RetryBackoff(base, attempt)
+			if d < minDur || d > maxDur {
+				t.Errorf("attempt %d: delay %v outside [%v, %v]", attempt, d, minDur, maxDur)
+			}
+		}
+	}
+}

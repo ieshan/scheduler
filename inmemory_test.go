@@ -82,4 +82,61 @@ func TestInMemoryJobStore_UpdateState(t *testing.T) {
 	if got.State.RunCount != 1 {
 		t.Errorf("RunCount = %d, want 1", got.State.RunCount)
 	}
+
+	// Verify ErrJobNotFound for non-existent job
+	err = store.UpdateState(ctx, "nonexistent", JobState{})
+	if !errors.Is(err, ErrJobNotFound) {
+		t.Fatalf("expected ErrJobNotFound for non-existent job, got %v", err)
+	}
+}
+
+func TestInMemoryJobStore_SaveOverwrite(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	store := NewInMemoryJobStore()
+	store.Save(ctx, &Job{ID: "j1", Name: "original"})
+	store.Save(ctx, &Job{ID: "j1", Name: "updated"})
+	got, err := store.Get(ctx, "j1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Name != "updated" {
+		t.Errorf("Name = %q, want %q", got.Name, "updated")
+	}
+}
+
+func TestInMemoryJobStore_ListEmpty(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	store := NewInMemoryJobStore()
+	jobs, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Errorf("List len = %d, want 0", len(jobs))
+	}
+}
+
+func TestInMemoryJobStore_GetReturnsCopy(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	store := NewInMemoryJobStore()
+	store.Save(ctx, &Job{ID: "j1", Name: "original"})
+	got, _ := store.Get(ctx, "j1")
+	got.Name = "modified"
+	orig, _ := store.Get(ctx, "j1")
+	if orig.Name != "original" {
+		t.Errorf("modifying Get result affected store: got %q, want %q", orig.Name, "original")
+	}
+}
+
+func TestInMemoryJobStore_DeleteNonexistent(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	store := NewInMemoryJobStore()
+	err := store.Delete(ctx, "nonexistent")
+	if !errors.Is(err, ErrJobNotFound) {
+		t.Fatalf("expected ErrJobNotFound, got %v", err)
+	}
 }

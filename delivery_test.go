@@ -95,3 +95,37 @@ func TestRouterDelivery_ErrorResult_SendsErrorText(t *testing.T) {
 		t.Fatalf("error not propagated: %q", tg.text)
 	}
 }
+
+func TestRouterDelivery_Close(t *testing.T) {
+	t.Parallel()
+	r := NewRouterDelivery(map[string]MessageSender{}, nil)
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close should return nil, got: %v", err)
+	}
+}
+
+func TestSplitChannelKey(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		key    string
+		prefix string
+		target string
+		ok     bool
+	}{
+		{"tg:123", "tg", "123", true},
+		{"tg:", "tg", "", true},
+		{":123", "", "", false},
+		{"nocolon", "", "", false},
+		{"", "", "", false},
+		{"a:b:c", "a", "b:c", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			prefix, target, ok := splitChannelKey(tt.key)
+			if ok != tt.ok || prefix != tt.prefix || target != tt.target {
+				t.Errorf("splitChannelKey(%q) = (%q, %q, %v), want (%q, %q, %v)",
+					tt.key, prefix, target, ok, tt.prefix, tt.target, tt.ok)
+			}
+		})
+	}
+}

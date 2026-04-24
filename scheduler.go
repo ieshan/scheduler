@@ -80,7 +80,7 @@ type Scheduler struct {
 }
 
 // Option configures a [Scheduler] after construction.
-// Used with [Scheduler.New].
+// Used with [New].
 type Option func(*Scheduler)
 
 // WithNowFunc overrides the clock used by the scheduler.
@@ -148,11 +148,11 @@ func (s *Scheduler) Start(ctx context.Context) {
 	ctx, cancel = context.WithCancel(ctx)
 	s.mu.Lock()
 	s.cancel = cancel
+	s.wg.Add(s.maxConc) // batch-add under lock so Stop sees all adds before Wait
 	s.mu.Unlock()
 
 	// Start worker pool
 	for i := 0; i < s.maxConc; i++ {
-		s.wg.Add(1)
 		go s.worker(ctx)
 	}
 
@@ -263,6 +263,9 @@ func (s *Scheduler) Stop() {
 			cancel()
 		}
 	})
+	// Acquire mutex to ensure we observe all wg.Add calls from Start.
+	s.mu.Lock()
+	s.mu.Unlock()
 	s.wg.Wait()
 }
 

@@ -19,6 +19,11 @@ type Job struct {
 	// The scheduler uses this to reconstruct the Schedule interface on load.
 	ScheduleType string `json:"schedule_type"`
 
+	// ScheduleExpression is the raw schedule expression used for persistence.
+	// For "cron": "0 9 * * *", for "every": "5m", for "at": RFC3339 timestamp.
+	// This is used to reconstruct the Schedule interface when loading from storage.
+	ScheduleExpression string `json:"schedule_expression"`
+
 	// Payload is optional user-defined data passed to the executor.
 	Payload any `json:"payload"`
 
