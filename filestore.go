@@ -8,17 +8,20 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/ieshan/idx"
 )
 
-// fileSystem is an internal abstraction for file operations to enable testing.
+// fileSystem abstracts file operations to enable testing.
 type fileSystem interface {
 	ReadFile(path string) ([]byte, error)
 	WriteFile(path string, data []byte, perm os.FileMode) error
 	MkdirAll(path string, perm os.FileMode) error
 	Rename(oldpath, newpath string) error
+	Remove(path string) error
 }
 
-// osFileSystem implements fileSystem using the real OS.
+// osFileSystem implements [fileSystem] using real OS operations.
 type osFileSystem struct{}
 
 func (osFileSystem) ReadFile(path string) ([]byte, error) {
@@ -37,9 +40,13 @@ func (osFileSystem) Rename(oldpath, newpath string) error {
 	return os.Rename(oldpath, newpath)
 }
 
+func (osFileSystem) Remove(path string) error {
+	return os.Remove(path)
+}
+
 // serializableJob is used for JSON serialization/deserialization.
 type serializableJob struct {
-	ID                 string    `json:"id"`
+	ID                 idx.ID    `json:"id"`
 	Name               string    `json:"name"`
 	ScheduleType       string    `json:"schedule_type"`
 	ScheduleExpression string    `json:"schedule_expression"`
@@ -60,7 +67,7 @@ type FileJobStore struct {
 	mu       sync.RWMutex
 	filepath string
 	fs       fileSystem
-	jobs     map[string]*Job
+	jobs     map[idx.ID]*Job
 }
 
 // NewFileJobStore creates a new FileJobStore that persists to the given file path.
@@ -69,7 +76,7 @@ func NewFileJobStore(path string) (*FileJobStore, error) {
 	store := &FileJobStore{
 		filepath: path,
 		fs:       osFileSystem{},
-		jobs:     make(map[string]*Job),
+		jobs:     make(map[idx.ID]*Job),
 	}
 	if err := store.load(); err != nil {
 		return nil, err
@@ -128,8 +135,8 @@ func (s *FileJobStore) persist() error {
 
 	// Rename is atomic on most filesystems
 	if err := s.fs.Rename(tempPath, s.filepath); err != nil {
-		// Clean up temp file on error
-		s.fs.WriteFile(tempPath, []byte{}, 0600) // Best effort cleanup via overwrite then remove
+		// Clean up temp file on error (best effort)
+		_ = s.fs.Remove(tempPath)
 		return fmt.Errorf("filestore: failed to rename file: %w", err)
 	}
 
@@ -207,13 +214,13 @@ func (s *FileJobStore) List(_ context.Context) ([]Job, error) {
 }
 
 // Get returns a single job by ID, or [ErrJobNotFound] if not found.
-func (s *FileJobStore) Get(_ context.Context, id string) (*Job, error) {
+func (s *FileJobStore) Get(_ context.Context, id idx.ID) (*Job, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	j, ok := s.jobs[id]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrJobNotFound, id)
+		return nil, fmt.Errorf("%w: %s", ErrJobNotFound, id.String())
 	}
 	// Return a copy to prevent external modification
 	jobCopy := *j
@@ -248,12 +255,12 @@ func (s *FileJobStore) Save(_ context.Context, job *Job) error {
 
 // Delete removes a job from the store.
 // Returns [ErrJobNotFound] if the job does not exist.
-func (s *FileJobStore) Delete(_ context.Context, id string) error {
+func (s *FileJobStore) Delete(_ context.Context, id idx.ID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, ok := s.jobs[id]; !ok {
-		return fmt.Errorf("%w: %q", ErrJobNotFound, id)
+		return fmt.Errorf("%w: %s", ErrJobNotFound, id.String())
 	}
 
 	delete(s.jobs, id)
@@ -262,13 +269,13 @@ func (s *FileJobStore) Delete(_ context.Context, id string) error {
 
 // UpdateState updates only the [JobState] fields of a job.
 // Returns [ErrJobNotFound] if the job does not exist.
-func (s *FileJobStore) UpdateState(_ context.Context, id string, state JobState) error {
+func (s *FileJobStore) UpdateState(_ context.Context, id idx.ID, state JobState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	j, ok := s.jobs[id]
 	if !ok {
-		return fmt.Errorf("%w: %q", ErrJobNotFound, id)
+		return fmt.Errorf("%w: %s", ErrJobNotFound, id.String())
 	}
 
 	j.State = state
@@ -360,11 +367,22 @@ func (m *memFileSystem) Rename(oldpath, newpath string) error {
 	return nil
 }
 
+func (m *memFileSystem) Remove(path string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := m.files[path]; !ok {
+		return &os.PathError{Op: "remove", Path: path, Err: os.ErrNotExist}
+	}
+	delete(m.files, path)
+	return nil
+}
+
 // newFileJobStoreForTest creates a FileJobStore with in-memory filesystem for testing.
 func newFileJobStoreForTest(fs fileSystem) *FileJobStore {
 	return &FileJobStore{
 		filepath: "/test/jobs.json",
 		fs:       fs,
-		jobs:     make(map[string]*Job),
+		jobs:     make(map[idx.ID]*Job),
 	}
 }

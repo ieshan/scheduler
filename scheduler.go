@@ -1,7 +1,7 @@
-// Package scheduler provides a periodic task scheduler with zero external
-// dependencies. It supports cron expressions, fixed intervals, and one-shot
-// schedules, with configurable concurrency, jittered
-// exponential backoff, and graceful shutdown.
+// Package scheduler provides a periodic task scheduler with minimal external
+// dependencies (only [github.com/ieshan/idx] for ID generation). It supports
+// cron expressions, fixed intervals, and one-shot schedules, with configurable
+// concurrency, jittered exponential backoff, and graceful shutdown.
 //
 // Key types:
 //   - [Scheduler] — orchestrates job dispatch
@@ -16,6 +16,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -70,11 +71,11 @@ type Scheduler struct {
 	logger    *slog.Logger
 	nowFunc   func() time.Time
 	wake      chan struct{}
-	stopOnce  sync.Once
 	stopCh    chan struct{}
-	mu        sync.Mutex
-	cancel    context.CancelFunc
+	cancel    atomic.Pointer[context.CancelFunc]
 	wg        sync.WaitGroup
+	started   atomic.Bool   // true once Start has successfully begun
+	startedCh chan struct{} // closed when Start initialization is complete
 	jobQueue  chan Job
 	delivery  DeliveryService
 }
@@ -127,6 +128,7 @@ func New(cfg Config, opts ...Option) *Scheduler {
 		nowFunc:   time.Now,
 		wake:      make(chan struct{}, 1),
 		stopCh:    make(chan struct{}),
+		startedCh: make(chan struct{}),
 		jobQueue:  make(chan Job, cfg.MaxConcurrent*2),
 	}
 	for _, opt := range opts {
@@ -140,16 +142,20 @@ func New(cfg Config, opts ...Option) *Scheduler {
 // Start polls the job store at the configured [Config.PollInterval],
 // identifies due jobs (NextRun <= now), and dispatches them to their [JobExecutor] implementations.
 //
+// Start is safe to call multiple times but will only start the scheduler on the first call.
 // Typically called in a goroutine:
 //
 //	go sched.Start(context.Background())
 func (s *Scheduler) Start(ctx context.Context) {
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithCancel(ctx)
-	s.mu.Lock()
-	s.cancel = cancel
-	s.wg.Add(s.maxConc) // batch-add under lock so Stop sees all adds before Wait
-	s.mu.Unlock()
+	// Ensure only one goroutine can start the scheduler.
+	if !s.started.CompareAndSwap(false, true) {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	s.cancel.Store(&cancel)
+	s.wg.Add(s.maxConc)
+	close(s.startedCh) // Signal that Start initialization is complete
 
 	// Start worker pool
 	for i := 0; i < s.maxConc; i++ {
@@ -253,19 +259,33 @@ func (s *Scheduler) executeJob(ctx context.Context, job Job) {
 //
 // After Stop returns, no further jobs will be dispatched.
 // Stop is safe to call multiple times (idempotent).
+// Stop is safe to call before Start() (no-op).
 func (s *Scheduler) Stop() {
-	s.stopOnce.Do(func() {
-		close(s.stopCh)
-		s.mu.Lock()
-		cancel := s.cancel
-		s.mu.Unlock()
-		if cancel != nil {
-			cancel()
+	// Fast path: if Start was never called, return immediately.
+	if !s.started.Load() {
+		select {
+		case <-s.startedCh:
+			// Start() completed initialization but we raced - proceed with normal shutdown.
+		default:
+			// Start() was never called - nothing to stop.
+			return
 		}
-	})
-	// Acquire mutex to ensure we observe all wg.Add calls from Start.
-	s.mu.Lock()
-	s.mu.Unlock()
+	}
+
+	// Wait for Start to complete initialization (or for startedCh to be closed).
+	// This ensures we observe the wg.Add calls from Start.
+	<-s.startedCh
+
+	select {
+	case <-s.stopCh:
+		// Already closed, just wait
+	default:
+		close(s.stopCh)
+		if cancelPtr := s.cancel.Load(); cancelPtr != nil {
+			(*cancelPtr)()
+		}
+	}
+
 	s.wg.Wait()
 }
 

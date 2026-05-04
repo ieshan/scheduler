@@ -1,12 +1,16 @@
 package scheduler
 
-import "time"
+import (
+	"time"
+
+	"github.com/ieshan/idx"
+)
 
 // Job is a scheduled task with a schedule, executor type, payload, and runtime state.
 // A job's state (NextRun, LastRun, RunCount) is updated by the scheduler after each execution.
 type Job struct {
 	// ID is the unique identifier for this job.
-	ID string `json:"id"`
+	ID idx.ID `json:"id"`
 
 	// Name is a human-readable name for the job.
 	Name string `json:"name"`

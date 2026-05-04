@@ -8,7 +8,6 @@ import (
 
 // fakeSender records Send calls for assertions.
 type fakeSender struct {
-	name   string
 	target string
 	text   string
 }
@@ -18,11 +17,11 @@ func (f *fakeSender) Send(_ context.Context, target, text string) error {
 	f.text = text
 	return nil
 }
-func (f *fakeSender) Name() string { return f.name }
+func (f *fakeSender) Name() string { return "fake" }
 
 func TestRouterDelivery_RouteToSender(t *testing.T) {
 	t.Parallel()
-	tg := &fakeSender{name: "tg"}
+	tg := &fakeSender{}
 	r := NewRouterDelivery(map[string]MessageSender{"tg": tg}, nil)
 	err := r.Deliver(t.Context(), &JobResult{
 		ChannelKey: "tg:42",
@@ -42,7 +41,7 @@ func TestRouterDelivery_RouteToSender(t *testing.T) {
 
 func TestRouterDelivery_Silent_Skips(t *testing.T) {
 	t.Parallel()
-	tg := &fakeSender{name: "tg"}
+	tg := &fakeSender{}
 	r := NewRouterDelivery(map[string]MessageSender{"tg": tg}, nil)
 	_ = r.Deliver(t.Context(), &JobResult{
 		ChannelKey: "tg:42", Output: "x", Silent: true,
@@ -72,7 +71,7 @@ func TestRouterDelivery_MalformedKey_Error(t *testing.T) {
 
 func TestRouterDelivery_RedactsSecrets(t *testing.T) {
 	t.Parallel()
-	tg := &fakeSender{name: "tg"}
+	tg := &fakeSender{}
 	scanner := func(s string) string { return strings.ReplaceAll(s, "secret", "[REDACTED]") }
 	r := NewRouterDelivery(map[string]MessageSender{"tg": tg}, scanner)
 	_ = r.Deliver(t.Context(), &JobResult{ChannelKey: "tg:1", Output: "contains secret here"})
@@ -83,7 +82,7 @@ func TestRouterDelivery_RedactsSecrets(t *testing.T) {
 
 func TestRouterDelivery_ErrorResult_SendsErrorText(t *testing.T) {
 	t.Parallel()
-	tg := &fakeSender{name: "tg"}
+	tg := &fakeSender{}
 	r := NewRouterDelivery(map[string]MessageSender{"tg": tg}, nil)
 	_ = r.Deliver(t.Context(), &JobResult{
 		ChannelKey: "tg:1",

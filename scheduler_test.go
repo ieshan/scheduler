@@ -34,7 +34,7 @@ func TestScheduler_ExecutesJobOnTime(t *testing.T) {
 	exec := newCountExecutor()
 
 	store.Save(ctx, &Job{
-		ID:           "j1",
+		ID:           mustID("01HZY0CWD0A0VKBQHHP3MS3GC0"),
 		Name:         "test",
 		Enabled:      true,
 		ExecutorType: "test",
@@ -77,7 +77,7 @@ func TestScheduler_DisabledJobsSkipped(t *testing.T) {
 	exec := newCountExecutor()
 
 	store.Save(ctx, &Job{
-		ID:           "disabled",
+		ID:           mustID("01HZY0CWD0A0VKBQHHP3MS3GC1"),
 		Name:         "skip me",
 		Enabled:      false,
 		ExecutorType: "test",
@@ -90,7 +90,7 @@ func TestScheduler_DisabledJobsSkipped(t *testing.T) {
 	// Also add an enabled job so we can wait for at least one tick.
 	enabledExec := newCountExecutor()
 	store.Save(ctx, &Job{
-		ID:           "enabled",
+		ID:           mustID("01HZY0CWD0A0VKBQHHP3MS3GC2"),
 		Name:         "run me",
 		Enabled:      true,
 		ExecutorType: "enabled",
@@ -165,7 +165,7 @@ func TestScheduler_WakeOnChange(t *testing.T) {
 
 	// Add a job that's due now and wake the scheduler.
 	store.Save(ctx, &Job{
-		ID: "wake", Name: "wake", Enabled: true, ExecutorType: "test",
+		ID: mustID("01HZY0CWD0000000000000000B"), Name: "state-check", Enabled: true, ExecutorType: "test",
 		Schedule: Every(50 * time.Millisecond),
 		State:    JobState{NextRun: time.Now()},
 	})
@@ -200,7 +200,7 @@ func TestScheduler_StopWaitsForInFlight(t *testing.T) {
 	})
 
 	store.Save(ctx, &Job{
-		ID: "blocking", Name: "blocking", Enabled: true, ExecutorType: "block",
+		ID: mustID("01HZY0CWD0A0VKBQHHP3MS3GC4"), Name: "blocking", Enabled: true, ExecutorType: "block",
 		Schedule: Every(time.Hour),
 		State:    JobState{NextRun: time.Now()},
 	})
@@ -255,7 +255,7 @@ func TestScheduler_StopCancelsContext(t *testing.T) {
 	started := make(chan struct{})
 
 	store.Save(ctx, &Job{
-		ID: "ctx-cancel", Name: "ctx-cancel", Enabled: true, ExecutorType: "block",
+		ID: mustID("01HZY0CWD00000000000000006"), Name: "ctx-cancel", Enabled: true, ExecutorType: "block",
 		Schedule: Every(time.Hour),
 		State:    JobState{NextRun: time.Now()},
 	})
@@ -340,13 +340,13 @@ func TestScheduler_WithNowFunc(t *testing.T) {
 
 	// job-A: due in the future relative to fake clock — must NOT run initially.
 	store.Save(ctx, &Job{
-		ID: "future", Name: "future", Enabled: true, ExecutorType: "future",
+		ID: mustID("01HZY0CWD00000000000000007"), Name: "future", Enabled: true, ExecutorType: "future",
 		Schedule: Every(time.Hour),
 		State:    JobState{NextRun: base.Add(time.Minute)},
 	})
 	// job-B: already past due relative to fake clock — must run immediately.
 	store.Save(ctx, &Job{
-		ID: "immediate", Name: "immediate", Enabled: true, ExecutorType: "immediate",
+		ID: mustID("01HZY0CWD00000000000000008"), Name: "immediate", Enabled: true, ExecutorType: "immediate",
 		Schedule: Every(time.Hour),
 		State:    JobState{NextRun: base.Add(-time.Second)},
 	})
@@ -432,7 +432,7 @@ func TestScheduler_SemaphoreLimitsConcurrency(t *testing.T) {
 
 	for i := range numJobs {
 		store.Save(ctx, &Job{
-			ID: fmt.Sprintf("j%d", i), Name: fmt.Sprintf("j%d", i),
+			ID: mustID("01HZY0CWD0A0VKBQHHP3M3GC" + fmt.Sprintf("%02d", i+10)), Name: fmt.Sprintf("j%d", i),
 			Enabled: true, ExecutorType: "test",
 			Schedule: Every(time.Hour),
 			State:    JobState{NextRun: time.Now()},
@@ -489,7 +489,7 @@ func TestScheduler_DeleteAfterRun(t *testing.T) {
 	exec := newCountExecutor()
 
 	store.Save(ctx, &Job{
-		ID:             "one-shot",
+		ID:             mustID("01HZY0CWD00000000000000009"),
 		Name:           "one-shot",
 		Enabled:        true,
 		ExecutorType:   "test",
@@ -514,7 +514,7 @@ func TestScheduler_DeleteAfterRun(t *testing.T) {
 	}
 	s.Stop()
 
-	job, err := store.Get(ctx, "one-shot")
+	job, err := store.Get(ctx, mustID("01HZY0CWD00000000000000009"))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -542,6 +542,30 @@ func TestScheduler_StopIdempotent(t *testing.T) {
 	s.Stop() // should not panic or hang
 }
 
+func TestScheduler_StopBeforeStart_NoDeadlock(t *testing.T) {
+	t.Parallel()
+	// Stop() should not block if Start() was never called.
+	store := NewInMemoryJobStore()
+	s := New(Config{
+		Store:        store,
+		PollInterval: 50 * time.Millisecond,
+		Executors:    map[string]JobExecutor{},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		s.Stop() // should return immediately, not block forever
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// success
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop() blocked when called before Start() - deadlock!")
+	}
+}
+
 func TestScheduler_SuccessfulJobUpdatesState(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -551,7 +575,7 @@ func TestScheduler_SuccessfulJobUpdatesState(t *testing.T) {
 	exec := newCountExecutor()
 
 	store.Save(ctx, &Job{
-		ID:           "state-check",
+		ID:           mustID("01HZY0CWD0000000000000000A"),
 		Name:         "state-check",
 		Enabled:      true,
 		ExecutorType: "test",
@@ -575,7 +599,7 @@ func TestScheduler_SuccessfulJobUpdatesState(t *testing.T) {
 	}
 	s.Stop()
 
-	job, err := store.Get(ctx, "state-check")
+	job, err := store.Get(ctx, mustID("01HZY0CWD0000000000000000A"))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -607,7 +631,7 @@ func TestScheduler_FailedJobUpdatesState(t *testing.T) {
 	})
 
 	store.Save(ctx, &Job{
-		ID: "fail", Name: "fail", Enabled: true, ExecutorType: "fail",
+		ID: mustID("01HZY0CWD00000000000000003"), Name: "fail", Enabled: true, ExecutorType: "fail",
 		Schedule: Every(time.Hour),
 		State:    JobState{NextRun: time.Now()},
 	})
@@ -624,7 +648,7 @@ func TestScheduler_FailedJobUpdatesState(t *testing.T) {
 	// Poll until the job state is updated.
 	deadline := time.After(3 * time.Second)
 	for {
-		job, err := store.Get(ctx, "fail")
+		job, err := store.Get(ctx, mustID("01HZY0CWD00000000000000003"))
 		if err == nil && job.State.LastStatus == StatusFailed {
 			if job.State.LastOutput != "boom" {
 				t.Errorf("LastOutput = %q, want %q", job.State.LastOutput, "boom")
@@ -652,14 +676,14 @@ func TestScheduler_MissingExecutor_SkipsJob(t *testing.T) {
 
 	// Job with unknown executor type - should be skipped
 	store.Save(ctx, &Job{
-		ID: "unknown-exec", Name: "unknown-exec", Enabled: true, ExecutorType: "nonexistent",
+		ID: mustID("01HZY0CWD00000000000000001"), Name: "unknown-exec", Enabled: true, ExecutorType: "nonexistent",
 		Schedule: Every(50 * time.Millisecond),
 		State:    JobState{NextRun: time.Now()},
 	})
 
 	// Job with known executor type - should run
 	store.Save(ctx, &Job{
-		ID: "known", Name: "known", Enabled: true, ExecutorType: "test",
+		ID: mustID("01HZY0CWD00000000000000002"), Name: "known", Enabled: true, ExecutorType: "test",
 		Schedule: Every(50 * time.Millisecond),
 		State:    JobState{NextRun: time.Now()},
 	})
@@ -681,7 +705,7 @@ func TestScheduler_MissingExecutor_SkipsJob(t *testing.T) {
 	s.Stop()
 
 	// Verify the unknown-exec job's state was never updated (no RunCount increment)
-	unknownJob, err := store.Get(ctx, "unknown-exec")
+	unknownJob, err := store.Get(ctx, mustID("01HZY0CWD00000000000000001"))
 	if err != nil {
 		t.Fatalf("Get unknown-exec: %v", err)
 	}

@@ -3,11 +3,11 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/ieshan/scheduler.svg)](https://pkg.go.dev/github.com/ieshan/scheduler)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ieshan/scheduler)](https://goreportcard.com/report/github.com/ieshan/scheduler)
 
-A lightweight, zero-dependency periodic task scheduler for Go. It supports cron expressions, fixed intervals, and one-shot schedules with configurable concurrency, jittered exponential backoff, and graceful shutdown.
+A lightweight, minimal-dependency periodic task scheduler for Go. It supports cron expressions, fixed intervals, and one-shot schedules with configurable concurrency, jittered exponential backoff, and graceful shutdown.
 
 ## Features
 
-- **Zero external dependencies** — uses only the Go standard library.
+- **Minimal external dependencies** — only [github.com/ieshan/idx](https://github.com/ieshan/idx) for ID generation.
 - **Multiple schedule types** — cron expressions (`0 9 * * *`), fixed intervals (`Every(5*time.Minute)`), and one-shot (`At(time.Now())`).
 - **Bounded concurrency** — configure `MaxConcurrent` to limit simultaneous job execution.
 - **Graceful shutdown** — `Stop` waits for in-flight jobs to finish and cancels their contexts.

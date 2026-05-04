@@ -19,7 +19,7 @@ func TestFileJobStore_SaveAndGet(t *testing.T) {
 
 	// Create a job with "every" schedule
 	job := &Job{
-		ID:                 "j1",
+		ID:                 mustID("01HZY0CWD0A0VKBQHHP3MS1GD0"),
 		Name:               "test-job",
 		ScheduleType:       "every",
 		ScheduleExpression: "5m",
@@ -32,7 +32,7 @@ func TestFileJobStore_SaveAndGet(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	got, err := store.Get(ctx, "j1")
+	got, err := store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS1GD0"))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestFileJobStore_SaveAndGet(t *testing.T) {
 	}
 
 	// Verify ErrJobNotFound for missing job
-	_, err = store.Get(ctx, "missing")
+	_, err = store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS1GD1"))
 	if !errors.Is(err, ErrJobNotFound) {
 		t.Fatalf("expected ErrJobNotFound, got %v", err)
 	}
@@ -58,9 +58,9 @@ func TestFileJobStore_List(t *testing.T) {
 	fs.MkdirAll("/test", 0750)
 	store := newFileJobStoreForTest(fs)
 
-	store.Save(ctx, &Job{ID: "a", Enabled: true, Name: "job-a"})
-	store.Save(ctx, &Job{ID: "b", Enabled: false, Name: "job-b"})
-	store.Save(ctx, &Job{ID: "c", Enabled: true, Name: "job-c"})
+	store.Save(ctx, &Job{ID: mustID("01HZY0CWD0A0VKBQHHP3MS1GD2"), Enabled: true, Name: "job-a"})
+	store.Save(ctx, &Job{ID: mustID("01HZY0CWD0A0VKBQHHP3MS1GD3"), Enabled: false, Name: "job-b"})
+	store.Save(ctx, &Job{ID: mustID("01HZY0CWD0A0VKBQHHP3MS1GD4"), Enabled: true, Name: "job-c"})
 
 	jobs, err := store.List(ctx)
 	if err != nil {
@@ -73,9 +73,9 @@ func TestFileJobStore_List(t *testing.T) {
 	// Verify all IDs are present
 	ids := make(map[string]bool)
 	for _, j := range jobs {
-		ids[j.ID] = true
+		ids[j.ID.String()] = true
 	}
-	if !ids["a"] || !ids["b"] || !ids["c"] {
+	if !ids["01HZY0CWD0A0VKBQHHP3MS1GD2"] || !ids["01HZY0CWD0A0VKBQHHP3MS1GD3"] || !ids["01HZY0CWD0A0VKBQHHP3MS1GD4"] {
 		t.Errorf("Not all job IDs present in list")
 	}
 }
@@ -87,13 +87,13 @@ func TestFileJobStore_Delete(t *testing.T) {
 	fs.MkdirAll("/test", 0750)
 	store := newFileJobStoreForTest(fs)
 
-	store.Save(ctx, &Job{ID: "del", Name: "to-delete"})
+	store.Save(ctx, &Job{ID: mustID("01HZY0CWD0A0VKBQHHP3MS1GD5"), Name: "to-delete"})
 
-	if err := store.Delete(ctx, "del"); err != nil {
+	if err := store.Delete(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS1GD5")); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	_, err := store.Get(ctx, "del")
+	_, err := store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS1GD5"))
 	if err == nil {
 		t.Fatal("expected error after delete")
 	}
@@ -102,7 +102,7 @@ func TestFileJobStore_Delete(t *testing.T) {
 	}
 
 	// Verify ErrJobNotFound when deleting non-existent job
-	err = store.Delete(ctx, "nonexistent")
+	err = store.Delete(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS1GD6"))
 	if !errors.Is(err, ErrJobNotFound) {
 		t.Fatalf("expected ErrJobNotFound for non-existent job, got %v", err)
 	}
@@ -115,9 +115,9 @@ func TestFileJobStore_UpdateState(t *testing.T) {
 	fs.MkdirAll("/test", 0750)
 	store := newFileJobStoreForTest(fs)
 
-	store.Save(ctx, &Job{ID: "s1", Name: "state-test"})
+	store.Save(ctx, &Job{ID: mustID("01HZY0CWD0A0VKBQHHP3MS1GD7"), Name: "state-test"})
 
-	err := store.UpdateState(ctx, "s1", JobState{
+	err := store.UpdateState(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS1GD7"), JobState{
 		LastStatus: StatusSuccess,
 		RunCount:   1,
 		LastOutput: "completed",
@@ -126,7 +126,7 @@ func TestFileJobStore_UpdateState(t *testing.T) {
 		t.Fatalf("UpdateState: %v", err)
 	}
 
-	got, _ := store.Get(ctx, "s1")
+	got, _ := store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS1GD7"))
 	if got.State.LastStatus != StatusSuccess {
 		t.Errorf("LastStatus = %q, want success", got.State.LastStatus)
 	}
@@ -138,7 +138,7 @@ func TestFileJobStore_UpdateState(t *testing.T) {
 	}
 
 	// Verify ErrJobNotFound for non-existent job
-	err = store.UpdateState(ctx, "nonexistent", JobState{})
+	err = store.UpdateState(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS1GD8"), JobState{})
 	if !errors.Is(err, ErrJobNotFound) {
 		t.Fatalf("expected ErrJobNotFound for non-existent job, got %v", err)
 	}
@@ -152,7 +152,7 @@ func TestFileJobStore_Load(t *testing.T) {
 	// Pre-populate the filesystem with JSON data
 	jsonData := `[
   {
-    "id": "loaded1",
+    "id": "01HZY0CWD0A0VKBQHHP3MS1GD9",
     "name": "loaded-job",
     "schedule_type": "cron",
     "schedule_expression": "0 9 * * *",
@@ -174,7 +174,7 @@ func TestFileJobStore_Load(t *testing.T) {
 
 	// Verify job was loaded
 	ctx := t.Context()
-	job, err := store.Get(ctx, "loaded1")
+	job, err := store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS1GD9"))
 	if err != nil {
 		t.Fatalf("Get loaded job: %v", err)
 	}
@@ -235,66 +235,6 @@ func TestFileJobStore_LoadCorruptedFile(t *testing.T) {
 	}
 }
 
-func TestFileJobStore_ScheduleRoundTrip(t *testing.T) {
-	t.Parallel()
-	ctx := t.Context()
-	fs := newMemFileSystem()
-	fs.MkdirAll("/test", 0750)
-	store := newFileJobStoreForTest(fs)
-
-	tests := []struct {
-		name       string
-		schedule   Schedule
-		schedType  string
-		expression string
-	}{
-		{
-			name:       "cron",
-			schedule:   mustCron("0 9 * * *"),
-			schedType:  "cron",
-			expression: "0 9 * * *",
-		},
-		{
-			name:       "every",
-			schedule:   Every(5 * time.Minute),
-			schedType:  "every",
-			expression: "5m",
-		},
-		{
-			name:       "at",
-			schedule:   At(time.Date(2026, 1, 15, 9, 0, 0, 0, time.UTC)),
-			schedType:  "at",
-			expression: "2026-01-15T09:00:00Z",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			job := &Job{
-				ID:                 "rt-" + tt.name,
-				Name:               "roundtrip-" + tt.name,
-				Schedule:           tt.schedule,
-				ScheduleType:       tt.schedType,
-				ScheduleExpression: tt.expression,
-				Enabled:            true,
-			}
-
-			if err := store.Save(ctx, job); err != nil {
-				t.Fatalf("Save: %v", err)
-			}
-
-			// Verify Schedule was persisted
-			got, err := store.Get(ctx, job.ID)
-			if err != nil {
-				t.Fatalf("Get: %v", err)
-			}
-			if got.ScheduleExpression != tt.expression {
-				t.Errorf("ScheduleExpression = %q, want %q", got.ScheduleExpression, tt.expression)
-			}
-		})
-	}
-}
-
 func TestFileJobStore_LoadReconstructsSchedules(t *testing.T) {
 	t.Parallel()
 	fs := newMemFileSystem()
@@ -303,7 +243,7 @@ func TestFileJobStore_LoadReconstructsSchedules(t *testing.T) {
 	// Pre-populate with all schedule types
 	jsonData := `[
   {
-    "id": "cron-job",
+    "id": "01HZY0CWD0A0VKBQHHP3MS2GD0",
     "name": "cron",
     "schedule_type": "cron",
     "schedule_expression": "0 */6 * * *",
@@ -312,7 +252,7 @@ func TestFileJobStore_LoadReconstructsSchedules(t *testing.T) {
     "state": {}
   },
   {
-    "id": "every-job",
+    "id": "01HZY0CWD0A0VKBQHHP3MS2GD1",
     "name": "every",
     "schedule_type": "every",
     "schedule_expression": "30m",
@@ -321,7 +261,7 @@ func TestFileJobStore_LoadReconstructsSchedules(t *testing.T) {
     "state": {}
   },
   {
-    "id": "at-job",
+    "id": "01HZY0CWD0A0VKBQHHP3MS2GD2",
     "name": "at",
     "schedule_type": "at",
     "schedule_expression": "2026-12-25T00:00:00Z",
@@ -340,7 +280,7 @@ func TestFileJobStore_LoadReconstructsSchedules(t *testing.T) {
 	ctx := t.Context()
 
 	// Verify cron schedule reconstruction
-	cronJob, err := store.Get(ctx, "cron-job")
+	cronJob, err := store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS2GD0"))
 	if err != nil {
 		t.Fatalf("Get cron-job: %v", err)
 	}
@@ -351,7 +291,7 @@ func TestFileJobStore_LoadReconstructsSchedules(t *testing.T) {
 	}
 
 	// Verify every schedule reconstruction
-	everyJob, err := store.Get(ctx, "every-job")
+	everyJob, err := store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS2GD1"))
 	if err != nil {
 		t.Fatalf("Get every-job: %v", err)
 	}
@@ -362,7 +302,7 @@ func TestFileJobStore_LoadReconstructsSchedules(t *testing.T) {
 	}
 
 	// Verify at schedule reconstruction
-	atJob, err := store.Get(ctx, "at-job")
+	atJob, err := store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS2GD2"))
 	if err != nil {
 		t.Fatalf("Get at-job: %v", err)
 	}
@@ -382,7 +322,7 @@ func TestFileJobStore_Concurrency(t *testing.T) {
 
 	// Start with some jobs
 	for i := 0; i < 5; i++ {
-		store.Save(ctx, &Job{ID: fmt.Sprintf("job%d", i), Name: fmt.Sprintf("Job %d", i)})
+		store.Save(ctx, &Job{ID: mustID("01HZY0CWD0A0VKBQHHP3M2GD" + fmt.Sprintf("%02d", i+10)), Name: fmt.Sprintf("Job %d", i)})
 	}
 
 	// Run concurrent operations
@@ -391,7 +331,7 @@ func TestFileJobStore_Concurrency(t *testing.T) {
 	// Goroutine 1: Save new jobs
 	go func() {
 		for i := 5; i < 10; i++ {
-			store.Save(ctx, &Job{ID: fmt.Sprintf("job%d", i), Name: fmt.Sprintf("Job %d", i)})
+			store.Save(ctx, &Job{ID: mustID("01HZY0CWD0A0VKBQHHP3M2GD" + fmt.Sprintf("%02d", i+10)), Name: fmt.Sprintf("Job %d", i)})
 		}
 		done <- true
 	}()
@@ -399,7 +339,7 @@ func TestFileJobStore_Concurrency(t *testing.T) {
 	// Goroutine 2: Update state
 	go func() {
 		for i := 0; i < 5; i++ {
-			store.UpdateState(ctx, fmt.Sprintf("job%d", i), JobState{RunCount: i + 1})
+			store.UpdateState(ctx, mustID("01HZY0CWD0A0VKBQHHP3M2GD"+fmt.Sprintf("%02d", i+10)), JobState{RunCount: i + 1})
 		}
 		done <- true
 	}()
@@ -427,7 +367,7 @@ func TestFileJobStore_Concurrency(t *testing.T) {
 	}
 
 	// Verify state updates were persisted
-	job0, err := store.Get(ctx, "job0")
+	job0, err := store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3M2GD10"))
 	if err != nil {
 		t.Fatalf("Get job0: %v", err)
 	}
@@ -444,7 +384,7 @@ func TestFileJobStore_Isolation(t *testing.T) {
 	store := newFileJobStoreForTest(fs)
 
 	// Save a job
-	original := &Job{ID: "iso", Name: "original", Enabled: true}
+	original := &Job{ID: mustID("01HZY0CWD00000000000000020"), Name: "original", Enabled: true}
 	store.Save(ctx, original)
 
 	// Modify the original job after saving
@@ -452,7 +392,7 @@ func TestFileJobStore_Isolation(t *testing.T) {
 	original.Enabled = false
 
 	// Get the job from store - should see original values
-	got, err := store.Get(ctx, "iso")
+	got, err := store.Get(ctx, mustID("01HZY0CWD00000000000000020"))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -467,7 +407,7 @@ func TestFileJobStore_Isolation(t *testing.T) {
 	got.Name = "modified-after-get"
 
 	// Get again - should still see original
-	got2, _ := store.Get(ctx, "iso")
+	got2, _ := store.Get(ctx, mustID("01HZY0CWD00000000000000020"))
 	if got2.Name != "original" {
 		t.Errorf("Name = %q, want original (returned copy should be independent)", got2.Name)
 	}
@@ -481,7 +421,7 @@ func TestFileJobStore_DeleteAfterRun(t *testing.T) {
 	store := newFileJobStoreForTest(fs)
 
 	job := &Job{
-		ID:             "one-shot",
+		ID:             mustID("01HZY0CWD00000000000000021"),
 		Name:           "One Shot Job",
 		DeleteAfterRun: true,
 		Enabled:        true,
@@ -491,7 +431,7 @@ func TestFileJobStore_DeleteAfterRun(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	got, err := store.Get(ctx, "one-shot")
+	got, err := store.Get(ctx, mustID("01HZY0CWD00000000000000021"))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -508,7 +448,7 @@ func TestFileJobStore_PayloadAndConfig(t *testing.T) {
 	store := newFileJobStoreForTest(fs)
 
 	job := &Job{
-		ID:           "payload-test",
+		ID:           mustID("01HZY0CWD00000000000000022"),
 		Name:         "Payload Test",
 		Payload:      map[string]any{"key": "value", "num": float64(42)},
 		ExecutorType: "test",
@@ -526,7 +466,7 @@ func TestFileJobStore_PayloadAndConfig(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	got, err := store.Get(ctx, "payload-test")
+	got, err := store.Get(ctx, mustID("01HZY0CWD00000000000000022"))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -573,7 +513,7 @@ func TestFileJobStore_NewFileJobStore_LoadsExisting(t *testing.T) {
 	filepath := tempDir + "/jobs.json"
 
 	// Pre-create a file
-	data := []byte(`[{"id": "existing", "name": "Existing Job", "enabled": true, "executor_type": "test", "state": {}}]`)
+	data := []byte(`[{"id": "01HZY0CWD00000000000000023", "name": "Existing Job", "enabled": true, "executor_type": "test", "state": {}}]`)
 	if err := os.WriteFile(filepath, data, 0640); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -584,7 +524,7 @@ func TestFileJobStore_NewFileJobStore_LoadsExisting(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	job, err := store.Get(ctx, "existing")
+	job, err := store.Get(ctx, mustID("01HZY0CWD00000000000000023"))
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}

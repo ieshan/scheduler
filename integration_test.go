@@ -60,7 +60,7 @@ func TestRuntime_ScheduledJob_DeliversToTelegram(t *testing.T) {
 	defer cancel()
 
 	_ = store.Save(ctx, &Job{
-		ID:           "x1",
+		ID:           mustID("01HZY0CWD0A0VKBQHHP3MS5GC0"),
 		Name:         "greet",
 		Enabled:      true,
 		ExecutorType: "hello",

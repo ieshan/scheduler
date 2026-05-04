@@ -25,7 +25,7 @@ func ExampleNew() {
 	defer cancel()
 
 	job := &Job{
-		ID:           "hello",
+		ID:           mustID("01HZY0CWD0A0VKBQHHP3MS4GC0"),
 		Name:         "hello-job",
 		ExecutorType: "print",
 		Enabled:      true,
@@ -58,7 +58,7 @@ func ExampleScheduler_cron() {
 	}
 
 	job := &Job{
-		ID:           "daily",
+		ID:           mustID("01HZY0CWD0A0VKBQHHP3MS4GC1"),
 		Name:         "daily-report",
 		ExecutorType: "noop",
 		Enabled:      true,
@@ -67,7 +67,7 @@ func ExampleScheduler_cron() {
 	}
 	_ = store.Save(context.Background(), job)
 
-	saved, _ := store.Get(context.Background(), "daily")
+	saved, _ := store.Get(context.Background(), mustID("01HZY0CWD0A0VKBQHHP3MS4GC1"))
 	fmt.Println(saved.Name)
 	// Output: daily-report
 }
@@ -76,7 +76,7 @@ func ExampleScheduler_cron() {
 func ExampleScheduler_every() {
 	store := NewInMemoryJobStore()
 	job := &Job{
-		ID:           "check",
+		ID:           mustID("01HZY0CWD0A0VKBQHHP3MS4GC2"),
 		Name:         "status-check",
 		ExecutorType: "noop",
 		Enabled:      true,
@@ -85,7 +85,7 @@ func ExampleScheduler_every() {
 	}
 	_ = store.Save(context.Background(), job)
 
-	saved, _ := store.Get(context.Background(), "check")
+	saved, _ := store.Get(context.Background(), mustID("01HZY0CWD0A0VKBQHHP3MS4GC2"))
 	fmt.Println(saved.Name)
 	// Output: status-check
 }
@@ -163,7 +163,7 @@ func ExampleInMemoryJobStore() {
 	ctx := context.Background()
 
 	job := &Job{
-		ID:   "demo",
+		ID:   mustID("01HZY0CWD0A0VKBQHHP3MS4GC3"),
 		Name: "demo-job",
 		State: JobState{
 			NextRun: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -172,7 +172,7 @@ func ExampleInMemoryJobStore() {
 
 	_ = store.Save(ctx, job)
 
-	got, err := store.Get(ctx, "demo")
+	got, err := store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS4GC3"))
 	if err != nil {
 		panic(err)
 	}
@@ -181,8 +181,8 @@ func ExampleInMemoryJobStore() {
 	jobs, _ := store.List(ctx)
 	fmt.Println(len(jobs))
 
-	_ = store.Delete(ctx, "demo")
-	_, err = store.Get(ctx, "demo")
+	_ = store.Delete(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS4GC3"))
+	_, err = store.Get(ctx, mustID("01HZY0CWD0A0VKBQHHP3MS4GC3"))
 	fmt.Println(errors.Is(err, ErrJobNotFound))
 	// Output:
 	// demo-job

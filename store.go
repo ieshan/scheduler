@@ -3,6 +3,8 @@ package scheduler
 import (
 	"context"
 	"errors"
+
+	"github.com/ieshan/idx"
 )
 
 // Sentinel errors returned by [JobStore] implementations.
@@ -20,7 +22,7 @@ type JobStore interface {
 	List(ctx context.Context) ([]Job, error)
 
 	// Get returns a single job by ID, or an error if not found.
-	Get(ctx context.Context, id string) (*Job, error)
+	Get(ctx context.Context, id idx.ID) (*Job, error)
 
 	// Save creates or overwrites a job in the store.
 	// Returns an error if the job cannot be persisted.
@@ -28,11 +30,11 @@ type JobStore interface {
 
 	// Delete removes a job from the store.
 	// Returns an error if the job is not found.
-	Delete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id idx.ID) error
 
 	// UpdateState updates only the [JobState] fields of a job
 	// (NextRun, LastRun, LastStatus, LastOutput, RunCount).
 	// The scheduler calls this after each execution.
 	// Returns an error if the job is not found.
-	UpdateState(ctx context.Context, id string, state JobState) error
+	UpdateState(ctx context.Context, id idx.ID, state JobState) error
 }
